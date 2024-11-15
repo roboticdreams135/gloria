@@ -17,6 +17,10 @@ import {
 } from "@ai16z/eliza/src/types.ts";
 import { stringToUuid } from "@ai16z/eliza/src/uuid.ts";
 import settings from "@ai16z/eliza/src/settings.ts";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 const upload = multer({ storage: multer.memoryStorage() });
 
 export const messageHandlerTemplate =
@@ -265,6 +269,51 @@ export class DirectClient {
                     }
                 }
                 res.json({ images: imagesRes });
+            }
+        );
+
+        this.app.post(
+            "/updateCharacter",
+            async (req: express.Request, res: express.Response) => {
+                // Verify API key
+                const apiKey = req.headers["x-api-key"];
+                if (apiKey !== process.env.GLORIA_REST_API_KEY) {
+                    res.status(401).send("Invalid API key");
+                    return;
+                }
+
+                const character = req.body;
+
+                const currentFilePath = fileURLToPath(import.meta.url);
+                const currentDirPath = dirname(currentFilePath);
+
+                const filePath = path.join(
+                    path.join(currentDirPath, "./../../../characters"),
+                    character.filename
+                );
+
+                fs.writeFileSync(
+                    filePath,
+                    JSON.stringify(character.json, null, 2)
+                );
+
+                try {
+                    const { exec } = await import('child_process');
+                    const ecosystemPath = path.join(process.cwd(), './../../ecosystem.config.js');
+                    
+                    exec(`pm2 restart ${ecosystemPath}`, (error, stdout, stderr) => {
+                        if (error) {
+                            console.error(`Error restarting PM2 process: ${error}`);
+                            console.error(`stderr: ${stderr}`);
+                        } else {
+                            console.log(`PM2 restart output: ${stdout}`);
+                        }
+                    });
+                } catch (error) {
+                    console.error('Failed to restart PM2 process:', error);
+                }
+
+                res.json({ message: "Character updated successfully" });
             }
         );
     }
